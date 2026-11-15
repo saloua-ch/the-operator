@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from functools import wraps
 from typing import Any, Callable
 
 os.environ.setdefault("LANGSMITH_PROJECT", "the-operator")
@@ -47,9 +48,13 @@ def traceable(*dargs, **dkwargs) -> Callable:
         return _traceable(*dargs, **dkwargs)
 
     def deco(fn):
-        return fn
+        @wraps(fn)
+        def wrapped(*args, **kwargs):
+            kwargs.pop("langsmith_extra", None)
+            return fn(*args, **kwargs)
+        return wrapped
     if dargs and callable(dargs[0]) and not dkwargs:
-        return dargs[0]
+        return deco(dargs[0])
     return deco
 
 

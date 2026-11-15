@@ -155,12 +155,13 @@ class AgentRun:
 
     # ------------------------------------------------------------ main loop
     def run_until_pause(self) -> str:
-        self._traced_run(langsmith_extra={"metadata": tracing.run_metadata(self.id, model=self.s.model)})
+        self._traced_run(self.id, self.goal,
+                         langsmith_extra={"metadata": tracing.run_metadata(self.id, model=self.s.model)})
         return self.status
 
-    @tracing.traceable(run_type="chain", name="operator.run_until_pause",
-                       process_inputs=lambda i: {"run_id": i["self"].id, "goal": i["self"].goal})
-    def _traced_run(self) -> str:
+    # LangSmith drops `self` from a method's inputs, so what we want to see is passed as arguments.
+    @tracing.traceable(run_type="chain", name="operator.run_until_pause")
+    def _traced_run(self, run_id: str, goal: str) -> dict:
         self._loop()
         return {"status": self.status, "stop_reason": self.stop_reason, "final": self.final, "tool_calls": self.tool_calls,
                 "cost_usd": round(self.cost_usd, 5), "pending": self.pending.preview if self.pending else None}
@@ -172,7 +173,7 @@ class AgentRun:
                 self._stop(reason)
                 break
             try:
-                resp = self._complete()
+                resp = self._complete(self.messages[-6:], len(self.messages))
             except Exception as e:
                 self.status, self.stop_reason = "error", f"model call failed: {str(e)[:300]}"
                 self._event("error", error=self.stop_reason)
@@ -196,9 +197,8 @@ class AgentRun:
             self._process_calls(resp.tool_calls, [])
         return self.status
 
-    @tracing.traceable(run_type="llm", name="llm.complete",
-                       process_inputs=lambda i: {"messages": i["self"].messages[-6:], "n_messages": len(i["self"].messages)})
-    def _complete(self):
+    @tracing.traceable(run_type="llm", name="llm.complete")
+    def _complete(self, last_messages: list, n_messages: int):
         resp = self.llm.complete(SYSTEM_PROMPT, self.messages, tools=tool_specs(self.s))
         tracing.set_usage(resp.input_tokens, resp.output_tokens, getattr(resp, "cache_read_tokens", 0),
                           getattr(resp, "cache_write_tokens", 0), model=self.s.model, provider=self.s.provider)
