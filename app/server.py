@@ -255,6 +255,7 @@ def _bg(run_id: str, fn, *a, **kw):
                 run.run_until_pause()
             except Exception as e:  # never leave a run stuck in "running"
                 run.status, run.stop_reason = "error", f"internal error: {str(e)[:300]}"
+                run.ended_at = __import__("time").time()
             finally:
                 save_run(run, RUNS_DIR)
     threading.Thread(target=work, daemon=True).start()

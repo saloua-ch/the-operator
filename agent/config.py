@@ -59,6 +59,8 @@ class Settings:
     max_identical_calls: int = int(os.environ.get("MAX_IDENTICAL_CALLS", 3))
     tool_timeout_s: float = _f("TOOL_TIMEOUT_S", 2.0)
     tool_retries: int = int(os.environ.get("TOOL_RETRIES", 1))
+    # seconds to wait for one model answer (retried up to 4 times); free models can be slow
+    model_timeout_s: float = _f("MODEL_TIMEOUT_S", 180)
 
     # ---- browser-use (real job sites) ----
     # Off by default so tests/eval stay offline. BROWSER_USE=on turns on the browser tools.

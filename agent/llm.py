@@ -121,6 +121,11 @@ class OpenAICompatLLM:
         for attempt in range(4):
             try:
                 r = self.client.post("/chat/completions", json=body)
+            except httpx.TimeoutException:
+                # slow model (free tiers, big first request): wait and try again
+                last = f"no answer within {self.client.timeout.read:.0f}s (MODEL_TIMEOUT_S)"
+                time.sleep(2 ** attempt)
+                continue
             except httpx.TransportError as e:
                 raise LLMError(f"Cannot reach the model server at {self.client.base_url}: {e}")
             if r.status_code in (429, 500, 502, 503, 529):
@@ -169,8 +174,10 @@ def make_llm(settings):
     if problem:
         raise LLMError(problem)
     if settings.provider == "openai":
-        return OpenAICompatLLM(settings.openai_api_key, settings.model, settings.openai_base_url)
-    return AnthropicLLM(settings.anthropic_api_key, settings.model, settings.anthropic_base_url)
+        return OpenAICompatLLM(settings.openai_api_key, settings.model, settings.openai_base_url,
+                               timeout=settings.model_timeout_s)
+    return AnthropicLLM(settings.anthropic_api_key, settings.model, settings.anthropic_base_url,
+                        timeout=settings.model_timeout_s)
 
 
 @dataclass

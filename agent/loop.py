@@ -105,6 +105,7 @@ class AgentRun:
         self.tokens_in = self.tokens_out = 0
         self.tokens_cache_write = self.tokens_cache_read = 0   # prompt-cache input, billed at ~1.25x / ~0.1x
         self.started = time.time()
+        self.ended_at: float | None = None     # the clock stops when the run ends
         self.wall_paused = 0.0
         self._paused_at: float | None = None
         self.call_counts: dict[str, int] = {}
@@ -130,7 +131,7 @@ class AgentRun:
     @property
     def elapsed(self) -> float:
         paused = self.wall_paused + ((time.time() - self._paused_at) if self._paused_at else 0)
-        return time.time() - self.started - paused   # time waiting for the human does not count
+        return (self.ended_at or time.time()) - self.started - paused   # time waiting for the human does not count
 
     def _limit_hit(self) -> str:
         if self.tool_calls >= self.s.max_steps:
@@ -151,6 +152,7 @@ class AgentRun:
 
     def _stop(self, reason: str):
         self.status, self.stop_reason = "stopped", reason
+        self.ended_at = time.time()
         self._event("stopped", reason=reason)
 
     # ------------------------------------------------------------ main loop
@@ -176,6 +178,7 @@ class AgentRun:
                 resp = self._complete(self.messages[-6:], len(self.messages))
             except Exception as e:
                 self.status, self.stop_reason = "error", f"model call failed: {str(e)[:300]}"
+                self.ended_at = time.time()
                 self._event("error", error=self.stop_reason)
                 break
             self.llm_calls += 1
@@ -267,6 +270,7 @@ class AgentRun:
             if name == "finish":
                 self.final = args.model_dump()
                 self.status = "done"
+                self.ended_at = time.time()
                 self._event("finished", **self.final)
         except ToolError as e:
             out = {"error": e.message, "hint": e.hint}
@@ -385,7 +389,8 @@ class AgentRun:
 
     # ------------------------------------------------------------ save / restore (survives a server restart)
     _SAVED = ("goal", "messages", "status", "stop_reason", "final", "trajectory", "tool_calls", "llm_calls", "tokens_in",
-              "tokens_out", "tokens_cache_write", "tokens_cache_read", "started", "wall_paused", "_paused_at", "call_counts", "no_tool_turns", "events")
+              "tokens_out", "tokens_cache_write", "tokens_cache_read", "started", "wall_paused", "_paused_at", "call_counts", "no_tool_turns", "events",
+              "ended_at")
 
     def to_state(self) -> dict:
         c = self.ctx
